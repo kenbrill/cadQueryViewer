@@ -17,7 +17,7 @@ A local web viewer for parametric 3D models built with [CadQuery](https://cadque
 | Requirement | Version | Notes |
 |---|---|---|
 | Python | 3.10 – 3.12 | 3.13+ lacks CadQuery OCC wheels |
-| Claude Code | latest | [Install](https://claude.ai/code) |
+| AI coding assistant | any | Claude Code, Cursor, Copilot, or any agentic AI tool |
 | CadQuery skill | — | optional — see Step 1 |
 
 ---
@@ -28,7 +28,7 @@ A local web viewer for parametric 3D models built with [CadQuery](https://cadque
 
 **This step is optional.** You can use the viewer with any CadQuery script you write by hand, or with a different AI skill or workflow that generates CadQuery code.
 
-That said, this viewer was built alongside the [flowful-ai/cad-skill](https://github.com/flowful-ai/cad-skill) Claude Code skill, which is what generates the `.py` files, STL exports, and preview PNGs that the viewer is designed to read. If you use that skill, everything works together out of the box — the `# PARAMETERS` section structure, the export naming conventions, and the preview PNG naming all match what the viewer expects.
+That said, this viewer was built alongside the [flowful-ai/cad-skill](https://github.com/flowful-ai/cad-skill) agentic AI skill, which is what generates the `.py` files, STL exports, and preview PNGs that the viewer is designed to read. If you use that skill, everything works together out of the box — the `# PARAMETERS` section structure, the export naming conventions, and the preview PNG naming all match what the viewer expects.
 
 If you write CadQuery scripts by hand or use a different tool, the viewer can still display your STLs in 3D and show measurement data — but the **parameter table** (and the Run / Save / Revert editing workflow) only works if your `.py` files follow the conventions described in the [Source `.py` requirements](#source-py-requirements) section below. Code structured differently — different section headers, parameters defined as class attributes, config files, etc. — won't be parsed correctly.
 
@@ -41,7 +41,9 @@ git clone https://github.com/flowful-ai/cad-skill ~/.claude/skills/parametric-3d
 
 > Source: [flowful-ai/cad-skill](https://github.com/flowful-ai/cad-skill) — PolyForm Noncommercial License
 
-### Step 2 — Install the `/stl-viewer` slash command
+### Step 2 — Install the `/stl-viewer` slash command *(Claude Code)*
+
+This step is specific to [Claude Code](https://claude.ai/code). If you use a different AI coding assistant, check whether it supports custom slash commands or similar plugin mechanisms — the concept translates, but the file location and format will differ.
 
 Copy the slash command into your Claude Code commands directory so `/stl-viewer` is available in any project:
 
@@ -78,7 +80,7 @@ python3.12 -m venv .venv
 
 ### Starting the viewer
 
-In any Claude Code session inside a directory with `.stl` files, type:
+**With Claude Code** — type in any session inside a directory with `.stl` files:
 
 ```
 /stl-viewer
@@ -87,19 +89,19 @@ In any Claude Code session inside a directory with `.stl` files, type:
 - If `viewer.py` is **not** present → copies it in, installs Flask, starts the server, opens the browser
 - If `viewer.py` is **already** present → stops the server and removes `viewer.py`
 
-The viewer auto-detects a free port (starting at 7173) and opens `http://localhost:<port>` automatically.
-
-You can also start it manually:
+**With any other AI tool, or manually** — just run the script directly:
 
 ```bash
 .venv/bin/python viewer.py
 ```
 
+The viewer auto-detects a free port (starting at 7173) and opens `http://localhost:<port>` automatically.
+
 ### Workflow with CadQuery
 
-1. Ask Claude to design a model. It will create a `.py` script with a `# PARAMETERS` section and export one or more `.stl` files.
-2. The CadQuery skill also renders a `_preview.png` for each STL.
-3. Run `/stl-viewer` to browse the results. Click any card to open the 3D view.
+1. Ask your AI coding assistant to design a model. It will create a `.py` script with a `# PARAMETERS` section and export one or more `.stl` files.
+2. If using the CadQuery skill, it also renders a `_preview.png` for each STL.
+3. Start the viewer (via `/stl-viewer` in Claude Code, or `python viewer.py` directly) to browse the results. Click any card to open the 3D view.
 4. To tweak a value — click the number in the **Parameters** column, type a new value. The field highlights yellow.
 5. Click **▶ Run** — a spinner appears while CadQuery rebuilds; the 3D model reloads automatically.
 6. Click **Save** to write the new values back into the source `.py`. Click **Revert** to restore the original.
@@ -111,7 +113,7 @@ You can also start it manually:
 - **Click** again — drops an orange pin (Pin B), draws a line, shows ΔX/ΔY/ΔZ and total distance in mm.
 - **Click** a third time or press **Escape** to reset.
 
-This lets you tell Claude things like "the hook back wall is at Y=46.5 — move it 5mm in +Y."
+This lets you tell your AI assistant things like "the hook back wall is at Y=46.5 — move it 5mm in +Y."
 
 ---
 
@@ -152,5 +154,5 @@ Rules:
 | File | Purpose |
 |---|---|
 | `viewer.py` | Self-contained Flask viewer — drop into any STL directory |
-| `stl-viewer.md` | Claude Code slash command definition (`/stl-viewer`) |
+| `stl-viewer.md` | Claude Code slash command definition (`/stl-viewer`) — adapt for other AI tools as needed |
 | `README.md` | This file |
