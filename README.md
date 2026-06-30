@@ -18,15 +18,21 @@ A local web viewer for parametric 3D models built with [CadQuery](https://cadque
 |---|---|---|
 | Python | 3.10 – 3.12 | 3.13+ lacks CadQuery OCC wheels |
 | Claude Code | latest | [Install](https://claude.ai/code) |
-| CadQuery skill | — | see Step 1 below |
+| CadQuery skill | — | optional — see Step 1 |
 
 ---
 
 ## Installation
 
-### Step 1 — Install the parametric-3d-printing skill
+### Step 1 — Install the parametric-3d-printing skill *(optional)*
 
-This skill gives Claude the ability to design and iterate on CadQuery models.
+**This step is optional.** You can use the viewer with any CadQuery script you write by hand, or with a different AI skill or workflow that generates CadQuery code.
+
+That said, this viewer was built alongside the [flowful-ai/cad-skill](https://github.com/flowful-ai/cad-skill) Claude Code skill, which is what generates the `.py` files, STL exports, and preview PNGs that the viewer is designed to read. If you use that skill, everything works together out of the box — the `# PARAMETERS` section structure, the export naming conventions, and the preview PNG naming all match what the viewer expects.
+
+If you write CadQuery scripts by hand or use a different tool, the viewer can still display your STLs in 3D and show measurement data — but the **parameter table** (and the Run / Save / Revert editing workflow) only works if your `.py` files follow the conventions described in the [Source `.py` requirements](#source-py-requirements) section below. Code structured differently — different section headers, parameters defined as class attributes, config files, etc. — won't be parsed correctly.
+
+To install the skill:
 
 ```bash
 mkdir -p ~/.claude/skills
