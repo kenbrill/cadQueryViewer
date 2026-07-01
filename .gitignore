@@ -1,6 +1,0 @@
-.claude/
-CLAUDE.md
-.venv/
-__pycache__/
-*.pyc
-viewer.py.bak
