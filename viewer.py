@@ -580,16 +580,27 @@ def detail_page(stem, stl_path):
   const overlay  = document.getElementById('buildOverlay');
   const buildMsg = document.getElementById('buildMsg');
 
+  // Track what the displayed model was last built with so the bar stays
+  // visible even if the user types back to the original value.
+  let displayedOverrides = JSON.parse(sessionStorage.getItem('model_built_' + stem) || '{{}}');
+
   function getOverrides() {{
     const o = {{}};
     inputs.forEach(el => {{ if (el.value !== el.dataset.orig) o[el.dataset.name] = el.value; }});
     return o;
   }}
 
+  function modelIsStale() {{
+    return inputs.some(el => {{
+      const built = displayedOverrides[el.dataset.name];
+      return built !== undefined && built !== el.dataset.orig;
+    }});
+  }}
+
   function updateDirty() {{
     const dirty = Object.keys(getOverrides()).length > 0;
     inputs.forEach(el => el.classList.toggle('dirty', el.value !== el.dataset.orig));
-    tweakBar.style.display = dirty ? 'flex' : 'none';
+    tweakBar.style.display = (dirty || modelIsStale()) ? 'flex' : 'none';
   }}
 
   inputs.forEach(el => el.addEventListener('input', updateDirty));
@@ -629,7 +640,13 @@ def detail_page(stem, stl_path):
 
   btnRun.addEventListener('click', async () => {{
     setWorking('Running…');
-    const r = await post(`/api/run/${{stem}}`, getOverrides());
+    const overrides = getOverrides();
+    const r = await post(`/api/run/${{stem}}`, overrides);
+    if (r.ok) {{
+      displayedOverrides = overrides;
+      sessionStorage.setItem('model_built_' + stem, JSON.stringify(overrides));
+      updateDirty();
+    }}
     setIdle(r.ok ? '✓ Done' : '✗ Failed', r.ok);
     if (!r.ok) console.error(r.stderr);
   }});
@@ -637,6 +654,10 @@ def detail_page(stem, stl_path):
   btnRevert.addEventListener('click', async () => {{
     setWorking('Reverting…');
     const r = await post(`/api/revert/${{stem}}`, {{}});
+    if (r.ok) {{
+      displayedOverrides = {{}};
+      sessionStorage.removeItem('model_built_' + stem);
+    }}
     inputs.forEach(el => {{ el.value = el.dataset.orig; }});
     updateDirty();
     setIdle(r.ok ? '✓ Reverted' : '✗ Failed', r.ok);
@@ -647,6 +668,8 @@ def detail_page(stem, stl_path):
     const overrides = getOverrides();
     const r = await post(`/api/save/${{stem}}`, overrides);
     if (r.ok) {{
+      displayedOverrides = {{}};
+      sessionStorage.removeItem('model_built_' + stem);
       inputs.forEach(el => {{ el.dataset.orig = el.value; }});
       updateDirty();
     }}
