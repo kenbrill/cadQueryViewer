@@ -169,6 +169,10 @@ INDEX_CSS = """
                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .card-meta { font-size:.72rem; color:#445; display:flex;
              justify-content:space-between; align-items:center; }
+.assembly-btn { font-size:.78rem; padding:3px 14px; background:#1a2a3a; color:#7ab3ef;
+                border:1px solid #2a3a5a; border-radius:4px; margin-left:auto;
+                align-self:center; }
+.assembly-btn:hover { background:#253a5a; text-decoration:none; }
 """
 
 def index_page(stls):
@@ -200,12 +204,14 @@ def index_page(stls):
         </a>"""
         body = f'<div class="grid">{cards}</div>'
 
+    assembly_btn = ('<a class="assembly-btn" href="/assembly">Assembly View</a>'
+                    if len(stls) >= 2 else '')
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>STL Models</title>
 <style>{SHARED_CSS}{INDEX_CSS}</style></head>
 <body>
-<header><h1>STL Models</h1><span class="sub">{HERE}</span></header>
+<header><h1>STL Models</h1><span class="sub">{HERE}</span>{assembly_btn}</header>
 {body}
 </body></html>"""
 
@@ -679,11 +685,329 @@ def detail_page(stem, stl_path):
 </script>
 </body></html>"""
 
+# ── assembly page ─────────────────────────────────────────────────────────────
+
+ASSEMBLY_COLORS_CSS = [
+    "#7aaabf", "#e07a5f", "#81b29a", "#f2cc8f",
+    "#8ecae6", "#d4a373", "#b5838d", "#6d6875",
+]
+
+ASSEMBLY_CSS = """
+.back { font-size:.78rem; }
+.layout { display:flex; height:calc(100vh - 48px); }
+#viewerWrap { flex:1; position:relative; min-width:0; background:#080810; }
+#viewer { width:100%; height:100%; display:block; }
+#coordHud { position:absolute; top:12px; right:14px; background:rgba(8,8,24,.88);
+            color:#c0d0f0; font:12px/1.8 monospace; padding:8px 12px; border-radius:6px;
+            border:1px solid #252545; pointer-events:none; display:none; min-width:180px; }
+.hud-hover { color:#7ab3ef; }
+.sidebar { width:340px; flex-shrink:0; overflow-y:auto; overflow-x:hidden;
+           background:#111120; border-left:1px solid #1a1a30; }
+.sidebar-hint { padding:.5rem .75rem; font-size:.68rem; color:#2a2a55;
+                border-bottom:1px solid #1a1a30; }
+.model-card { border-bottom:1px solid #1a1a30; padding:.75rem; transition:background .1s; }
+.model-card.selected { background:#1a2030; outline:1px solid #4a6080; }
+.card-hdr { display:flex; align-items:center; gap:.5rem; margin-bottom:.55rem; }
+.swatch { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+.card-name { flex:1; font-size:.85rem; color:#c0d0f0; font-weight:600;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.vis-btn { background:none; border:none; cursor:pointer; font-size:.88rem; padding:0 2px;
+           color:#7ab3ef; opacity:1; transition:opacity .15s; }
+.vis-btn.vis-off { opacity:.25; }
+.tf-row { display:flex; align-items:center; gap:.5rem; margin-bottom:.4rem; }
+.tf-label { color:#6677aa; font-size:.65rem; text-transform:uppercase;
+            letter-spacing:.04em; width:3.8rem; flex-shrink:0; }
+.tf-axes { display:flex; gap:.35rem; }
+.tf-axes label { display:flex; align-items:center; gap:2px; color:#556; font-size:.72rem; }
+.tf-input { width:52px; background:#0a0a18; border:1px solid #252545; border-radius:3px;
+            color:#e0e0e0; font-family:monospace; font-size:.73rem; padding:2px 4px;
+            text-align:right; -moz-appearance:textfield; }
+.tf-input::-webkit-inner-spin-button { opacity:.3; }
+.tf-input:focus { outline:none; border-color:#7ab3ef; }
+.reset-btn { background:#1a1a2a; border:1px solid #252545; border-radius:3px;
+             color:#7ab3ef; font-size:.7rem; padding:2px 10px; cursor:pointer;
+             margin-top:.35rem; }
+.reset-btn:hover { background:#252545; }
+"""
+
+_ASSEMBLY_JS = r"""
+import * as THREE from 'three';
+import { STLLoader }        from 'three/addons/loaders/STLLoader.js';
+import { OrbitControls }    from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+const canvas = document.getElementById('viewer');
+const hud    = document.getElementById('coordHud');
+const W = () => canvas.clientWidth, H = () => canvas.clientHeight;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(W(), H());
+renderer.setClearColor(0x080810);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, W() / H(), 0.1, 500000);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const sun  = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(3, 5, 4); scene.add(sun);
+const fill = new THREE.DirectionalLight(0x8899ff, 0.3); fill.position.set(-3,-2,-2); scene.add(fill);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.07;
+
+// TransformControls — pauses orbit while dragging a handle
+const tc = new TransformControls(camera, renderer.domElement);
+tc.setSize(0.8);
+scene.add(tc);
+tc.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
+
+// When a handle is dragged, read the mesh's new transform back into state + inputs
+tc.addEventListener('objectChange', () => {
+    const s = state[selectedIdx];
+    if (!s || !s.mesh) return;
+    s.ox = s.mesh.position.x; s.oy = s.mesh.position.y; s.oz = s.mesh.position.z;
+    s.rx = s.mesh.rotation.x * 180 / Math.PI;
+    s.ry = s.mesh.rotation.y * 180 / Math.PI;
+    s.rz = s.mesh.rotation.z * 180 / Math.PI;
+    document.querySelectorAll(`.tf-input[data-idx="${selectedIdx}"]`).forEach(inp => {
+        inp.value = +(s[inp.dataset.axis].toFixed(1));
+    });
+});
+
+const MODELS = MODELS_JSON;
+const state  = MODELS.map(m => ({ ...m, mesh: null, ox:0, oy:0, oz:0, rx:0, ry:0, rz:0 }));
+
+let loadedCount = 0, selectedIdx = -1;
+const raycaster = new THREE.Raycaster();
+const mouse     = new THREE.Vector2();
+
+function applyTransform(s) {
+    if (!s.mesh) return;
+    s.mesh.position.set(s.ox, s.oy, s.oz);
+    s.mesh.rotation.set(s.rx * Math.PI / 180, s.ry * Math.PI / 180, s.rz * Math.PI / 180);
+}
+
+function selectModel(idx) {
+    selectedIdx = idx;
+    document.querySelectorAll('.model-card').forEach((el, i) => el.classList.toggle('selected', i === idx));
+    if (idx >= 0 && state[idx].mesh) {
+        tc.attach(state[idx].mesh);
+        const card = document.querySelector(`.model-card[data-idx="${idx}"]`);
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+        tc.detach();
+    }
+}
+
+function makeAxisLabel(text, color) {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+    const ctx = c.getContext('2d');
+    ctx.font = 'bold 80px system-ui, sans-serif';
+    ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 8;
+    ctx.fillText(text, 64, 64);
+    return new THREE.Sprite(new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(c), transparent: true, depthTest: false
+    }));
+}
+
+function frameAll() {
+    const box = new THREE.Box3();
+    state.forEach(s => { if (s.mesh) box.expandByObject(s.mesh); });
+    if (box.isEmpty()) return;
+    const center = new THREE.Vector3(); box.getCenter(center);
+    const size   = new THREE.Vector3(); box.getSize(size);
+    const d = Math.max(size.x, size.y, size.z);
+    controls.target.copy(center);
+    camera.position.set(center.x + d*0.9, center.y + d*0.6, center.z + d*1.3);
+    camera.lookAt(center); controls.update();
+
+    const o  = box.min.clone();
+    const len = d*0.10, hLen = len*0.22, hW = hLen*0.65, lS = len*0.55;
+    for (const [dir, col, lbl, lclr, lx, ly, lz] of [
+        [new THREE.Vector3(1,0,0), 0xff4444, 'X', '#ff6666', o.x+len*1.2, o.y,         o.z        ],
+        [new THREE.Vector3(0,1,0), 0x44cc44, 'Y', '#44ee44', o.x,         o.y+len*1.2, o.z        ],
+        [new THREE.Vector3(0,0,1), 0x4488ff, 'Z', '#66aaff', o.x,         o.y,         o.z+len*1.2],
+    ]) {
+        scene.add(new THREE.ArrowHelper(dir, o, len, col, hLen, hW));
+        const sp = makeAxisLabel(lbl, lclr);
+        sp.position.set(lx, ly, lz); sp.scale.set(lS, lS, 1); scene.add(sp);
+    }
+}
+
+const loader = new STLLoader();
+state.forEach((s) => {
+    loader.load(s.url, (geo) => {
+        geo.computeVertexNormals();
+        s.mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+            color: s.color, specular: 0x334455, shininess: 35, side: THREE.DoubleSide
+        }));
+        applyTransform(s);
+        scene.add(s.mesh);
+        loadedCount++;
+        if (loadedCount === state.length) frameAll();
+    });
+});
+
+// ── HUD ───────────────────────────────────────────────────────────────────────
+const fv = v => v.toFixed(1);
+canvas.addEventListener('mousemove', e => {
+    if (tc.dragging) { hud.style.display = 'none'; return; }
+    const r = canvas.getBoundingClientRect();
+    mouse.x =  ((e.clientX - r.left) / r.width)  * 2 - 1;
+    mouse.y = -((e.clientY - r.top)  / r.height)  * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const meshes = state.filter(s => s.mesh && s.mesh.visible).map(s => s.mesh);
+    const hits   = raycaster.intersectObjects(meshes);
+    if (hits.length) {
+        const p = hits[0].point;
+        hud.style.display = 'block';
+        hud.innerHTML = `<div class="hud-hover">X:&nbsp;${fv(p.x)}&ensp;Y:&nbsp;${fv(p.y)}&ensp;Z:&nbsp;${fv(p.z)}</div>`;
+    } else {
+        hud.style.display = 'none';
+    }
+});
+canvas.addEventListener('mouseleave', () => { hud.style.display = 'none'; });
+
+// ── Click to select ───────────────────────────────────────────────────────────
+// Only acts on actual mesh hits — clicking TC handles or empty space is ignored.
+// Press Escape to deselect.
+let downAt = null;
+canvas.addEventListener('mousedown', e => { downAt = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('mouseup',   e => {
+    if (!downAt) return;
+    const dx = e.clientX - downAt.x, dy = e.clientY - downAt.y;
+    downAt = null;
+    if (Math.sqrt(dx*dx + dy*dy) > 4 || tc.dragging) return;
+
+    const r = canvas.getBoundingClientRect();
+    mouse.x =  ((e.clientX - r.left) / r.width)  * 2 - 1;
+    mouse.y = -((e.clientY - r.top)  / r.height)  * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const meshes = state.filter(s => s.mesh && s.mesh.visible).map(s => s.mesh);
+    const hits   = raycaster.intersectObjects(meshes);
+    if (!hits.length) return;
+    selectModel(state.findIndex(s => s.mesh === hits[0].object));
+});
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 't' || e.key === 'T') tc.setMode('translate');
+    if (e.key === 'r' || e.key === 'R') tc.setMode('rotate');
+    if (e.key === 'Escape') selectModel(-1);
+});
+
+// ── Sidebar interactions ──────────────────────────────────────────────────────
+document.querySelectorAll('.tf-input').forEach(el => {
+    el.addEventListener('input', () => {
+        const i = +el.dataset.idx, ax = el.dataset.axis;
+        state[i][ax] = parseFloat(el.value) || 0;
+        applyTransform(state[i]);
+    });
+});
+
+document.querySelectorAll('.vis-btn').forEach(el => {
+    el.addEventListener('click', () => {
+        const i = +el.dataset.idx;
+        if (!state[i].mesh) return;
+        state[i].mesh.visible = !state[i].mesh.visible;
+        el.classList.toggle('vis-off', !state[i].mesh.visible);
+        if (!state[i].mesh.visible && selectedIdx === i) selectModel(-1);
+    });
+});
+
+document.querySelectorAll('.reset-btn').forEach(el => {
+    el.addEventListener('click', () => {
+        const i = +el.dataset.idx;
+        ['ox','oy','oz','rx','ry','rz'].forEach(ax => { state[i][ax] = 0; });
+        document.querySelectorAll(`.tf-input[data-idx="${i}"]`).forEach(inp => { inp.value = '0'; });
+        applyTransform(state[i]);
+    });
+});
+
+(function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); })();
+window.addEventListener('resize', () => {
+    camera.aspect = W() / H(); camera.updateProjectionMatrix(); renderer.setSize(W(), H());
+});
+"""
+
+def assembly_page(stls):
+    import json as _json
+    cards = ""
+    models_data = []
+    for i, stl in enumerate(stls):
+        css  = ASSEMBLY_COLORS_CSS[i % len(ASSEMBLY_COLORS_CSS)]
+        col  = int(css.lstrip('#'), 16)
+        models_data.append({"url": f"/files/stl/{stl.name}", "name": stl.stem,
+                             "color": col, "css": css})
+        cards += f"""
+      <div class="model-card" data-idx="{i}">
+        <div class="card-hdr">
+          <span class="swatch" style="background:{css}"></span>
+          <span class="card-name">{stl.stem}</span>
+          <button class="vis-btn" data-idx="{i}" title="Toggle visibility">&#128065;</button>
+        </div>
+        <div class="tf-row">
+          <span class="tf-label">Translate</span>
+          <div class="tf-axes">
+            <label>X<input class="tf-input" type="number" data-idx="{i}" data-axis="ox" step="1" value="0"></label>
+            <label>Y<input class="tf-input" type="number" data-idx="{i}" data-axis="oy" step="1" value="0"></label>
+            <label>Z<input class="tf-input" type="number" data-idx="{i}" data-axis="oz" step="1" value="0"></label>
+          </div>
+        </div>
+        <div class="tf-row">
+          <span class="tf-label">Rotate&nbsp;°</span>
+          <div class="tf-axes">
+            <label>X<input class="tf-input" type="number" data-idx="{i}" data-axis="rx" step="5" value="0"></label>
+            <label>Y<input class="tf-input" type="number" data-idx="{i}" data-axis="ry" step="5" value="0"></label>
+            <label>Z<input class="tf-input" type="number" data-idx="{i}" data-axis="rz" step="5" value="0"></label>
+          </div>
+        </div>
+        <button class="reset-btn" data-idx="{i}">Reset</button>
+      </div>"""
+
+    models_json_str = _json.dumps(models_data)
+    js = _ASSEMBLY_JS.replace("MODELS_JSON", models_json_str)
+    importmap = ('{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0'
+                 '/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net'
+                 '/npm/three@0.160.0/examples/jsm/"}}')
+    n = len(stls)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Assembly View</title>
+<script type="importmap">{importmap}</script>
+<style>{SHARED_CSS}{ASSEMBLY_CSS}</style></head>
+<body>
+<header>
+  <a class="back" href="/">&#8592; All models</a>
+  <h1>Assembly View</h1>
+  <span class="sub">{n} model{"s" if n != 1 else ""} &mdash; click to select &nbsp;·&nbsp; T = translate handles &nbsp;·&nbsp; R = rotate handles &nbsp;·&nbsp; Esc = deselect</span>
+</header>
+<div class="layout">
+  <div id="viewerWrap">
+    <canvas id="viewer"></canvas>
+    <div id="coordHud"></div>
+  </div>
+  <div class="sidebar">
+    {cards}
+  </div>
+</div>
+<script type="module">{js}</script>
+</body></html>"""
+
 # ── routes ─────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     return index_page(all_stls())
+
+@app.route("/assembly")
+def assembly():
+    stls = all_stls()
+    if len(stls) < 2:
+        abort(404)
+    return assembly_page(stls)
 
 @app.route("/model/<stem>")
 def model(stem):

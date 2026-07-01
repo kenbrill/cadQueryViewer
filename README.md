@@ -9,6 +9,7 @@ A local web viewer for parametric 3D models built with [CadQuery](https://cadque
 - **Save** / **Revert** buttons to commit or discard tweaks
 - Auto-reload when any STL or source `.py` changes on disk
 - Resizable sidebar, axis orientation arrows
+- **Assembly View** — load all STLs at once to check how parts fit together
 
 ---
 
@@ -114,6 +115,27 @@ The viewer auto-detects a free port (starting at 7173) and opens `http://localho
 - **Click** a third time or press **Escape** to reset.
 
 This lets you tell your AI assistant things like "the hook back wall is at Y=46.5 — move it 5mm in +Y."
+
+### Assembly View
+
+When 2 or more STLs exist, an **Assembly View** button appears on the index page. It loads all parts simultaneously in distinct colors at their native CadQuery coordinates — so parts designed in a shared coordinate space appear assembled by default.
+
+**Selecting and moving parts**
+
+- **Click** any part in the viewport — colored drag handles appear on it.
+- Press **T** to switch to translate handles (arrows along each axis).
+- Press **R** to switch to rotate handles (arcs around each axis).
+- Drag a handle to move or spin the part with the mouse.
+- Press **Escape** to deselect (hide the handles).
+
+**Sidebar controls**
+
+Each part has a card in the right sidebar with number inputs for precise X/Y/Z translate and rotate offsets. Typing a value moves the part immediately; drag-and-drop and number inputs stay in sync.
+
+- The **eye icon** toggles a part's visibility — useful for inspecting internal geometry without deleting the part from the scene.
+- **Reset** zeros all offsets for that part and snaps it back to its original position.
+
+The Assembly View has no Run/Save workflow — it is a visual check tool only. Changes are not written back to any file.
 
 ---
 
