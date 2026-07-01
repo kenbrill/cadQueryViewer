@@ -466,8 +466,9 @@ def detail_page(stem, stl_path):
         for p in params
     ) or "<tr><td colspan='3' style='color:#446;font-style:italic'>none found</td></tr>"
 
-    src_link = (f'<div class="src-link"><a href="/files/py/{src_py.name}" target="_blank">'
-                f'Source: {src_py.name}</a></div>') if src_py else ""
+    src_link = (f'<div class="src-link">'
+                f'<a href="#" onclick="fetch(\'/api/edit/{stem}\');return false;">'
+                f'Open: {src_py.name}</a></div>') if src_py else ""
 
     preview_html = (f'<img class="preview-img" src="/files/img/{preview.name}" alt="preview">'
                     if preview else '<div class="preview-ph">&#9651;</div>')
@@ -1036,6 +1037,14 @@ def serve_py(filename):
     if not f.exists() or f.suffix != ".py":
         abort(404)
     return send_file(f, mimetype="text/plain; charset=utf-8")
+
+@app.route("/api/edit/<stem>")
+def api_edit(stem):
+    src = find_source_py(stem)
+    if not src:
+        abort(404)
+    subprocess.Popen(["open", str(src)])
+    return "", 204
 
 @app.route("/api/run/<stem>", methods=["POST"])
 def api_run(stem):
